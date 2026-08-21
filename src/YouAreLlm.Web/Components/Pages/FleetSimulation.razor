@@ -1,0 +1,94 @@
+@page "/fleet-simulation"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IFleetRunStore FleetRuns
+
+<PageTitle>Fleet simulation</PageTitle>
+
+<div class="fleet-shell">
+    <aside class="fleet-sidebar">
+        <section class="panel fleet-start-panel">
+            <div class="panel-header">
+                <span>New simulation</span>
+                <span class="badge">@runs.Count</span>
+            </div>
+            <FleetRunForm OnStart="StartRunAsync" />
+        </section>
+
+        <section class="panel fleet-guide-panel">
+            <div class="panel-header">Workflow</div>
+            <ol>
+                <li>Start two self-authored workers.</li>
+                <li>Complete both requests in Operator.</li>
+                <li>Return one parent synthesis.</li>
+            </ol>
+            <p>Worker tasks are in-process simulations, not OS processes or Copilot Fleet subagents.</p>
+        </section>
+    </aside>
+
+    <main class="fleet-main">
+        <section class="fleet-hero">
+            <div>
+                <p class="fleet-eyebrow">SELF-AUTHORED ORCHESTRATION</p>
+                <h1>Fleet simulation</h1>
+                <p>Parallel worker requests become one bounded parent handoff.</p>
+            </div>
+            <div class="fleet-metrics" aria-label="Fleet simulation metrics">
+                <div>
+                    <strong>@runs.Count</strong>
+                    <span>Runs</span>
+                </div>
+                <div>
+                    <strong>@ActiveWorkerCount</strong>
+                    <span>Workers active</span>
+                </div>
+                <div>
+                    <strong>@CompletedRunCount</strong>
+                    <span>Completed</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="fleet-runs-panel">
+            <div class="fleet-runs-heading">
+                <div>
+                    <h2>Run timeline</h2>
+                    <p>Worker responses are passed to the parent as a bounded handoff.</p>
+                </div>
+            </div>
+            <FleetRunList Runs="runs" />
+        </section>
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<FleetRunSnapshot> runs = [];
+
+    private int ActiveWorkerCount => runs.Sum(run => run.Workers.Count(worker => worker.Status == FleetWorkerStatus.AwaitingResponse));
+
+    private int CompletedRunCount => runs.Count(run => run.Status == FleetRunStatus.Completed);
+
+    protected override void OnInitialized()
+    {
+        FleetRuns.Changed += RefreshAsync;
+        runs = FleetRuns.GetRuns();
+    }
+
+    public void Dispose()
+    {
+        FleetRuns.Changed -= RefreshAsync;
+    }
+
+    private Task RefreshAsync() => InvokeAsync(() =>
+    {
+        runs = FleetRuns.GetRuns();
+        StateHasChanged();
+    });
+
+    private Task StartRunAsync(string goal)
+    {
+        FleetRuns.StartRun(goal);
+        runs = FleetRuns.GetRuns();
+        return Task.CompletedTask;
+    }
+}

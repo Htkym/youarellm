@@ -1,0 +1,214 @@
+@using System.Globalization
+@using System.Text.Json
+
+<details class="ask-user-details">
+    <summary>Ask User</summary>
+    <div class="ask-user-form">
+        <label for="askUserQuestion">Question</label>
+        <textarea id="askUserQuestion" class="form-control" @bind="question" rows="3" placeholder="What should happen next?"></textarea>
+
+        <div class="ask-user-form-grid">
+            <div>
+                <label for="askUserPropertyName">Response field</label>
+                <input id="askUserPropertyName" class="form-control" @bind="propertyName" placeholder="answer" />
+            </div>
+            <div>
+                <label for="askUserResponseType">Response type</label>
+                <select id="askUserResponseType" class="form-select" @bind="responseType">
+                    <option value="string">Text</option>
+                    <option value="array">Multiple choice</option>
+                    <option value="boolean">Yes / no</option>
+                    <option value="number">Number</option>
+                    <option value="integer">Integer</option>
+                </select>
+            </div>
+        </div>
+
+        <label for="askUserTitle">Field label</label>
+        <input id="askUserTitle" class="form-control" @bind="title" placeholder="Your answer" />
+
+        <label for="askUserDescription">Help text</label>
+        <input id="askUserDescription" class="form-control" @bind="description" placeholder="Optional guidance for the answer" />
+
+        @if (SupportsChoices)
+        {
+            <div class="ask-user-options">
+                <div class="ask-user-options-heading">
+                    <label>Choices</label>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="AddChoice">Add choice</button>
+                </div>
+                @foreach (var choice in choices)
+                {
+                    <div class="ask-user-option" @key="choice.Id">
+                        <input class="form-control" @bind="choice.Value" placeholder="Choice" aria-label="Choice" />
+                        <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => RemoveChoice(choice.Id)" aria-label="Remove choice">Remove</button>
+                    </div>
+                }
+            </div>
+        }
+
+        <label for="askUserDefault">Default value</label>
+        <input id="askUserDefault" class="form-control" @bind="defaultValue" placeholder="@DefaultValuePlaceholder" />
+        <p class="ask-user-hint">@DefaultValueHint</p>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <p class="ask-user-error" role="alert">@error</p>
+        }
+
+        <button class="btn btn-primary" type="button" @onclick="SubmitAsync">Send ask_user</button>
+    </div>
+</details>
+
+@code {
+    private readonly List<Choice> choices = [new(), new()];
+    private string question = string.Empty;
+    private string propertyName = "answer";
+    private string responseType = "string";
+    private string title = "Answer";
+    private string description = string.Empty;
+    private string defaultValue = string.Empty;
+    private string? error;
+
+    [Parameter, EditorRequired]
+    public EventCallback<FunctionCallItem> OnSubmit { get; set; }
+
+    private bool SupportsChoices => responseType is "string" or "array";
+
+    private string DefaultValuePlaceholder => responseType switch
+    {
+        "boolean" => "true or false",
+        "number" => "e.g. 1.5",
+        "integer" => "e.g. 1",
+        "array" => "Comma-separated values",
+        _ => "Optional default response",
+    };
+
+    private string DefaultValueHint => responseType switch
+    {
+        "boolean" => "Use true or false.",
+        "number" => "Use a JSON number.",
+        "integer" => "Use a whole number.",
+        "array" => "Separate default selections with commas.",
+        _ => "Leave empty when there is no default.",
+    };
+
+    private void AddChoice() => choices.Add(new Choice());
+
+    private void RemoveChoice(Guid id)
+    {
+        if (choices.Count > 1)
+        {
+            choices.RemoveAll(choice => choice.Id == id);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            error = "Enter a question.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            error = "Enter a response field name.";
+            return;
+        }
+
+        var fieldSchema = new Dictionary<string, object?>
+        {
+            ["type"] = responseType,
+            ["title"] = string.IsNullOrWhiteSpace(title) ? propertyName.Trim() : title.Trim(),
+        };
+
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            fieldSchema["description"] = description.Trim();
+        }
+
+        var populatedChoices = choices
+            .Select(choice => choice.Value.Trim())
+            .Where(choice => choice.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (responseType == "string" && populatedChoices.Length > 0)
+        {
+            fieldSchema["enum"] = populatedChoices;
+        }
+        else if (responseType == "array")
+        {
+            var itemSchema = new Dictionary<string, object?> { ["type"] = "string" };
+            if (populatedChoices.Length > 0)
+            {
+                itemSchema["enum"] = populatedChoices;
+            }
+
+            fieldSchema["items"] = itemSchema;
+        }
+
+        if (!TryAddDefaultValue(fieldSchema))
+        {
+            return;
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["message"] = question.Trim(),
+            ["requestedSchema"] = new Dictionary<string, object?>
+            {
+                ["properties"] = new Dictionary<string, object?>
+                {
+                    [propertyName.Trim()] = fieldSchema,
+                },
+            },
+        };
+
+        error = null;
+        await OnSubmit.InvokeAsync(new FunctionCallItem(
+            "call_" + Guid.NewGuid().ToString("N"),
+            "ask_user",
+            JsonSerializer.Serialize(payload)));
+    }
+
+    private bool TryAddDefaultValue(Dictionary<string, object?> fieldSchema)
+    {
+        var trimmedDefault = defaultValue.Trim();
+        if (trimmedDefault.Length == 0)
+        {
+            return true;
+        }
+
+        switch (responseType)
+        {
+            case "boolean" when bool.TryParse(trimmedDefault, out var booleanValue):
+                fieldSchema["default"] = booleanValue;
+                return true;
+            case "number" when decimal.TryParse(trimmedDefault, NumberStyles.Number, CultureInfo.InvariantCulture, out var numberValue):
+                fieldSchema["default"] = numberValue;
+                return true;
+            case "integer" when long.TryParse(trimmedDefault, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integerValue):
+                fieldSchema["default"] = integerValue;
+                return true;
+            case "array":
+                fieldSchema["default"] = trimmedDefault
+                    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                return true;
+            case "string":
+                fieldSchema["default"] = trimmedDefault;
+                return true;
+            default:
+                error = $"Enter a valid {responseType} default value.";
+                return false;
+        }
+    }
+
+    private sealed class Choice
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+
+        public string Value { get; set; } = string.Empty;
+    }
+}

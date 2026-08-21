@@ -1,0 +1,67 @@
+.ask-user-details {
+    border-top: 1px solid #eee;
+    padding-top: 0.75rem;
+}
+
+.ask-user-details summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.ask-user-form {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.75rem;
+}
+
+.ask-user-form label {
+    font-weight: 600;
+}
+
+.ask-user-form-grid {
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ask-user-form-grid > div {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.ask-user-options {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.ask-user-options-heading,
+.ask-user-option {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: space-between;
+}
+
+.ask-user-option .form-control {
+    min-width: 0;
+}
+
+.ask-user-hint,
+.ask-user-error {
+    font-size: 0.85rem;
+    margin: -0.3rem 0 0;
+}
+
+.ask-user-hint {
+    color: #57606a;
+}
+
+.ask-user-error {
+    color: #cf222e;
+}
+
+@media (max-width: 550px) {
+    .ask-user-form-grid {
+        grid-template-columns: 1fr;
+    }
+}

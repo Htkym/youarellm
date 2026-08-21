@@ -1,0 +1,36 @@
+<form class="fleet-run-form" @onsubmit="StartAsync" @onsubmit:preventDefault>
+    <div class="fleet-form-heading">
+        <h2>Parent task</h2>
+        <p>Assign one bounded goal to two workers.</p>
+    </div>
+    <label for="fleetGoal">Goal</label>
+    <textarea id="fleetGoal" class="fleet-goal-input" @bind="goal" rows="4" placeholder="Verify the whitespace-only greeting behavior."></textarea>
+    <p class="fleet-form-hint">The specification and implementation workers begin together.</p>
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <p class="fleet-error">@error</p>
+    }
+    <button class="btn btn-primary fleet-start-button" type="submit">
+        <span aria-hidden="true">+</span> Start two workers
+    </button>
+</form>
+
+@code {
+    private string goal = "Verify the whitespace-only greeting behavior.";
+    private string? error;
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnStart { get; set; }
+
+    private async Task StartAsync()
+    {
+        if (string.IsNullOrWhiteSpace(goal))
+        {
+            error = "Enter a parent goal.";
+            return;
+        }
+
+        error = null;
+        await OnStart.InvokeAsync(goal.Trim());
+    }
+}

@@ -1,0 +1,480 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject PendingRequestStore Store
+@inject TokenUsageEstimator UsageEstimator
+@using System.Text.Json
+@using YouAreLlm.Web.Api
+
+<PageTitle>youarellm</PageTitle>
+
+<div class="operator-shell">
+    <aside class="operator-sidebar">
+        <section class="panel">
+            <div class="panel-header">
+                <span>Pending requests</span>
+                <span class="badge">@primaryPending.Count</span>
+            </div>
+            @if (primaryPending.Count == 0)
+            {
+                <p class="empty">No pending requests.</p>
+            }
+            else
+            {
+                <ul class="request-list">
+                    @foreach (var pendingRequest in primaryPending)
+                    {
+                        <li @key="pendingRequest.RequestId">
+                            <button class="request-item @(pendingRequest.RequestId == selectedRequestId ? "selected" : "")" @onclick="() => SelectPending(pendingRequest.RequestId)">
+                                <span>@Preview(pendingRequest.Messages)</span>
+                                <small>@pendingRequest.CreatedAt.LocalDateTime.ToLongTimeString()</small>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        @if (auxiliaryPending.Count > 0)
+        {
+            <section class="panel">
+                <details>
+                    <summary>Background requests (@auxiliaryPending.Count)</summary>
+                    <ul class="request-list">
+                        @foreach (var pendingRequest in auxiliaryPending)
+                        {
+                            <li @key="pendingRequest.RequestId">
+                                <button class="request-item @(pendingRequest.RequestId == selectedRequestId ? "selected" : "")" @onclick="() => SelectPending(pendingRequest.RequestId)">
+                                    <span>@Preview(pendingRequest.Messages)</span>
+                                    <small>@pendingRequest.CreatedAt.LocalDateTime.ToLongTimeString()</small>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </details>
+            </section>
+        }
+
+        <section class="panel">
+            <div class="panel-header">History</div>
+            @if (history.Count == 0)
+            {
+                <p class="empty">No completed requests.</p>
+            }
+            else
+            {
+                <ul class="request-list">
+                    @foreach (var item in history)
+                    {
+                        <li @key="item.RequestId">
+                            <button class="request-item @(item.RequestId == selectedHistoryId ? "selected" : "")" @onclick="() => SelectHistory(item.RequestId)">
+                                <span>@Preview(item.Messages)</span>
+                                <small>replied @item.CompletedAt.LocalDateTime.ToLongTimeString()</small>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </aside>
+
+    <main class="operator-main">
+        @if (SelectedPending is { } request)
+        {
+            <section class="prompt-card">
+                <div class="card-title">@request.Protocol · Model: @request.Model</div>
+                @if (request.Protocol == "Responses")
+                {
+                    <div class="request-metadata">
+                        previous_response_id:
+                        @(request.PreviousResponseId ?? "not supplied")
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(request.RawRequestJson))
+                {
+                    <details class="wire-payload">
+                        <summary>Wire request (@request.Protocol)</summary>
+                        <pre>@request.RawRequestJson</pre>
+                    </details>
+                }
+                @{
+                    var wireMessages = request.Messages
+                        .Select((message, index) => (Message: message, Index: index))
+                        .ToArray();
+                    var systemMessages = wireMessages.Where(item => item.Message.Role == "system").ToArray();
+                    var conversationMessages = wireMessages.Where(item => item.Message.Role != "system").ToArray();
+                }
+                @if (systemMessages.Length > 0)
+                {
+                    <details class="previous-messages">
+                        <summary>Instructions (@systemMessages.Length)</summary>
+                        @foreach (var message in systemMessages)
+                        {
+                            <PromptMessage Role="@message.Message.Role"
+                                           Content="@message.Message.Content"
+                                           ItemType="@message.Message.ItemType"
+                                           Protocol="@request.Protocol"
+                                           WireIndex="@message.Index"
+                                           WirePath="@(request.Protocol == "Responses" ? "instructions" : null)" />
+                        }
+                    </details>
+                }
+                @if (conversationMessages.Length > 1)
+                {
+                    <details class="previous-messages">
+                        <summary>Previous (@(conversationMessages.Length - 1))</summary>
+                        @foreach (var message in conversationMessages.Take(conversationMessages.Length - 1))
+                        {
+                            <PromptMessage Role="@message.Message.Role"
+                                           Content="@message.Message.Content"
+                                           ItemType="@message.Message.ItemType"
+                                           Protocol="@request.Protocol"
+                                           WireIndex="@message.Index" />
+                        }
+                    </details>
+                }
+                @if (conversationMessages.Length > 0)
+                {
+                    var latestMessage = conversationMessages[^1];
+                    <div class="latest-message">
+                        <span>Latest</span>
+                        <PromptMessage Role="@latestMessage.Message.Role"
+                                       Content="@latestMessage.Message.Content"
+                                       ItemType="@latestMessage.Message.ItemType"
+                                       Protocol="@request.Protocol"
+                                       WireIndex="@latestMessage.Index"
+                                       InitiallyOpen="true" />
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(request.ToolsJson))
+                {
+                    <PromptMessage Role="tools"
+                                   Content="@request.ToolsJson"
+                                   ItemType="@(request.Protocol == "Responses" ? "response_tools" : "chat_tools")"
+                                   Protocol="@request.Protocol" />
+                }
+            </section>
+
+            <section class="response-card">
+                <label for="responseText">Your response</label>
+                <textarea id="responseText" class="response-textarea" @bind="responseText" rows="8" placeholder="Type response. Ctrl+Enter is intentionally left to the browser for now."></textarea>
+                <div class="actions">
+                    <button class="btn btn-secondary" @onclick="SendDeltaAsync" disabled="@string.IsNullOrWhiteSpace(responseText)">Send progress</button>
+                    <button class="btn btn-primary" @onclick="CompleteTextAsync" disabled="@string.IsNullOrWhiteSpace(responseText)">Send final</button>
+                </div>
+
+                <AskUserForm OnSubmit="CompleteAskUserAsync" />
+
+                <details class="tool-details">
+                    <summary>Send @(request.Protocol == "Responses" ? "function call (Responses)" : "tool call (Chat Completions)")</summary>
+                    <label>Function name</label>
+                    @if (AvailableFunctionNames.Count == 0)
+                    {
+                        <p class="empty">This request does not advertise any callable functions.</p>
+                    }
+                    else
+                    {
+                        <select class="form-select" @bind="functionName">
+                            @foreach (var availableFunctionName in AvailableFunctionNames)
+                            {
+                                <option value="@availableFunctionName">@availableFunctionName</option>
+                            }
+                        </select>
+                        <label>Arguments JSON</label>
+                        <textarea class="form-control" @bind="functionArguments" rows="4"></textarea>
+                        <button class="btn btn-outline-primary" @onclick="CompleteFunctionCallAsync">Send @(request.Protocol == "Responses" ? "function_call" : "tool_call")</button>
+                    }
+                </details>
+            </section>
+        }
+        else if (SelectedHistory is { } completed)
+        {
+            <section class="prompt-card">
+                <div class="card-title">Completed: @completed.Protocol · @completed.Model</div>
+                @{
+                    var usage = UsageEstimator.Estimate(
+                        completed.Messages,
+                        completed.ToolsJson,
+                        completed.UsageOutput);
+                }
+                <section class="usage-summary">
+                    <span>Usage estimate (o200k_base)</span>
+                    <dl>
+                        <div>
+                            <dt>Input</dt>
+                            <dd>@usage.InputTokens tokens</dd>
+                        </div>
+                        <div>
+                            <dt>Output</dt>
+                            <dd>@usage.OutputTokens tokens</dd>
+                        </div>
+                        <div>
+                            <dt>Total</dt>
+                            <dd>@usage.TotalTokens tokens</dd>
+                        </div>
+                    </dl>
+                </section>
+                @if (completed.Protocol == "Responses")
+                {
+                    <div class="request-metadata">
+                        previous_response_id:
+                        @(completed.PreviousResponseId ?? "not supplied")
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(completed.RawRequestJson))
+                {
+                    <details class="wire-payload">
+                        <summary>Wire request (@completed.Protocol)</summary>
+                        <pre>@completed.RawRequestJson</pre>
+                    </details>
+                }
+                @{
+                    var wireMessages = completed.Messages
+                        .Select((message, index) => (Message: message, Index: index))
+                        .ToArray();
+                    var systemMessages = wireMessages.Where(item => item.Message.Role == "system").ToArray();
+                    var conversationMessages = wireMessages.Where(item => item.Message.Role != "system").ToArray();
+                }
+                @if (systemMessages.Length > 0)
+                {
+                    <details class="previous-messages">
+                        <summary>Instructions (@systemMessages.Length)</summary>
+                        @foreach (var message in systemMessages)
+                        {
+                            <PromptMessage Role="@message.Message.Role"
+                                           Content="@message.Message.Content"
+                                           ItemType="@message.Message.ItemType"
+                                           Protocol="@completed.Protocol"
+                                           WireIndex="@message.Index"
+                                           WirePath="@(completed.Protocol == "Responses" ? "instructions" : null)" />
+                        }
+                    </details>
+                }
+                @if (conversationMessages.Length > 0)
+                {
+                    <details class="previous-messages">
+                        <summary>Previous (@conversationMessages.Length)</summary>
+                        @foreach (var message in conversationMessages)
+                        {
+                            <PromptMessage Role="@message.Message.Role"
+                                           Content="@message.Message.Content"
+                                           ItemType="@message.Message.ItemType"
+                                           Protocol="@completed.Protocol"
+                                           WireIndex="@message.Index" />
+                        }
+                    </details>
+                }
+                <div class="latest-message">
+                    <span>Latest</span>
+                    <PromptMessage Role="assistant"
+                                   Content="@completed.Response"
+                                   Protocol="@completed.Protocol"
+                                   WirePath="@(completed.Protocol == "Responses" ? "output[0]" : "choices[0].message")"
+                                   InitiallyOpen="true" />
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="empty-state">
+                <h1>youarellm</h1>
+                <p>Start Copilot CLI with BYOK, choose a wire API, and send a prompt.</p>
+                <h2>Chat Completions (default)</h2>
+                <pre>$env:COPILOT_PROVIDER_BASE_URL = "http://localhost:5166/v1"
+$env:COPILOT_PROVIDER_TYPE = "openai"
+$env:COPILOT_MODEL = "human"
+copilot</pre>
+                <h2>Responses</h2>
+                <pre>$env:COPILOT_PROVIDER_BASE_URL = "http://localhost:5166/v1"
+$env:COPILOT_PROVIDER_TYPE = "openai"
+$env:COPILOT_PROVIDER_WIRE_API = "responses"
+$env:COPILOT_MODEL = "human"
+copilot</pre>
+            </section>
+        }
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<PendingRequestSnapshot> primaryPending = [];
+    private IReadOnlyList<PendingRequestSnapshot> auxiliaryPending = [];
+    private IReadOnlyList<CompletedRequestSnapshot> history = [];
+    private string? selectedRequestId;
+    private string? selectedHistoryId;
+    private bool selectedBackgroundManually;
+    private string responseText = string.Empty;
+    private string functionName = string.Empty;
+    private string functionArguments = "{}";
+
+    private PendingRequestSnapshot? SelectedPending => primaryPending
+        .Concat(auxiliaryPending)
+        .FirstOrDefault(request => request.RequestId == selectedRequestId);
+
+    private CompletedRequestSnapshot? SelectedHistory => history.FirstOrDefault(item => item.RequestId == selectedHistoryId);
+
+    private IReadOnlyList<string> AvailableFunctionNames
+        => ExtractFunctionNames(SelectedPending?.ToolsJson);
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnStoreChangedAsync;
+        RefreshSnapshots();
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= OnStoreChangedAsync;
+    }
+
+    private Task OnStoreChangedAsync()
+        => InvokeAsync(() =>
+        {
+            RefreshSnapshots();
+            StateHasChanged();
+        });
+
+    private void RefreshSnapshots()
+    {
+        var pending = Store.GetPending();
+        primaryPending = pending.Where(request => !request.IsBackgroundRequest).ToArray();
+        auxiliaryPending = pending.Where(request => request.IsBackgroundRequest).ToArray();
+        history = Store.GetHistory();
+        var selectedRequest = pending.FirstOrDefault(request => request.RequestId == selectedRequestId);
+        if (selectedRequest is null)
+        {
+            var completedRequest = history.FirstOrDefault(request => request.RequestId == selectedRequestId);
+            if (completedRequest is not null)
+            {
+                selectedRequestId = null;
+                selectedHistoryId = completedRequest.RequestId;
+                selectedBackgroundManually = false;
+                return;
+            }
+
+            if (selectedHistoryId is not null && history.Any(request => request.RequestId == selectedHistoryId))
+            {
+                return;
+            }
+
+            selectedRequestId = primaryPending.FirstOrDefault()?.RequestId;
+            selectedBackgroundManually = false;
+            ResetFunctionCall();
+        }
+        else if (selectedRequest.IsBackgroundRequest && !selectedBackgroundManually)
+        {
+            selectedRequestId = primaryPending.FirstOrDefault()?.RequestId;
+            ResetFunctionCall();
+        }
+    }
+
+    private void SelectPending(string requestId)
+    {
+        selectedRequestId = requestId;
+        selectedHistoryId = null;
+        selectedBackgroundManually = auxiliaryPending.Any(request => request.RequestId == requestId);
+        responseText = string.Empty;
+        ResetFunctionCall();
+    }
+
+    private void SelectHistory(string requestId)
+    {
+        selectedHistoryId = requestId;
+        selectedRequestId = null;
+        selectedBackgroundManually = false;
+        responseText = string.Empty;
+    }
+
+    private Task SendDeltaAsync()
+    {
+        if (selectedRequestId is not null && !string.IsNullOrWhiteSpace(responseText))
+        {
+            Store.TryAddDelta(selectedRequestId, responseText.TrimEnd() + Environment.NewLine);
+            responseText = string.Empty;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task CompleteTextAsync()
+    {
+        if (selectedRequestId is not null && !string.IsNullOrWhiteSpace(responseText))
+        {
+            Store.TryCompleteText(selectedRequestId, responseText.Trim());
+            responseText = string.Empty;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task CompleteFunctionCallAsync()
+    {
+        if (selectedRequestId is not null &&
+            AvailableFunctionNames.Contains(functionName, StringComparer.Ordinal))
+        {
+            var callId = "call_" + Guid.NewGuid().ToString("N");
+            Store.TryCompleteTool(selectedRequestId, new FunctionCallItem(callId, functionName.Trim(), functionArguments.Trim()));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void ResetFunctionCall()
+    {
+        functionName = AvailableFunctionNames.FirstOrDefault() ?? string.Empty;
+        functionArguments = "{}";
+    }
+
+    private static IReadOnlyList<string> ExtractFunctionNames(string? toolsJson)
+    {
+        if (string.IsNullOrWhiteSpace(toolsJson))
+        {
+            return [];
+        }
+
+        using var tools = JsonDocument.Parse(toolsJson);
+        if (tools.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return tools.RootElement
+            .EnumerateArray()
+            .Select(GetFunctionName)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string? GetFunctionName(JsonElement tool)
+    {
+        if (tool.TryGetProperty("function", out var function) &&
+            function.TryGetProperty("name", out var nestedName))
+        {
+            return nestedName.GetString();
+        }
+
+        return tool.TryGetProperty("type", out var type) &&
+               type.GetString() == "function" &&
+               tool.TryGetProperty("name", out var name)
+            ? name.GetString()
+            : null;
+    }
+
+    private Task CompleteAskUserAsync(FunctionCallItem toolCall)
+    {
+        if (selectedRequestId is not null)
+        {
+            Store.TryCompleteTool(selectedRequestId, toolCall);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static string Preview(IReadOnlyList<ChatMessage> messages)
+    {
+        var content = messages.LastOrDefault(message => message.Role == "user")?.Content
+            ?? messages.LastOrDefault()?.Content
+            ?? "(no message)";
+        return content.Length <= 80 ? content : content[..80] + "...";
+    }
+}

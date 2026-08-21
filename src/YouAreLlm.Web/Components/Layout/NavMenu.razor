@@ -1,0 +1,39 @@
+@rendermode InteractiveServer
+
+<div class="nav-menu @(isExpanded ? "expanded" : "collapsed")">
+    <div class="top-row">
+        <a class="navbar-brand" href="" title="youarellm">
+            <span class="brand-mark" aria-hidden="true">Y</span>
+            <span class="brand-label">youarellm</span>
+        </a>
+        <button class="menu-toggle"
+                type="button"
+                title="@(isExpanded ? "Collapse navigation" : "Expand navigation")"
+                @onclick="ToggleNavigation">
+            <span aria-hidden="true">☰</span>
+        </button>
+    </div>
+
+    <div class="nav-scrollable">
+        <nav class="nav flex-column">
+            <div class="nav-item">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Operator">
+                    <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span>
+                    <span class="nav-label">Operator</span>
+                </NavLink>
+            </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="fleet-simulation" title="Fleet simulation">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span>
+                    <span class="nav-label">Fleet simulation</span>
+                </NavLink>
+            </div>
+        </nav>
+    </div>
+</div>
+
+@code {
+    private bool isExpanded;
+
+    private void ToggleNavigation() => isExpanded = !isExpanded;
+}

@@ -1,0 +1,108 @@
+@using YouAreLlm.Core
+
+@if (Runs.Count == 0)
+{
+    <div class="fleet-empty-state">
+        <div class="fleet-empty-icon" aria-hidden="true">+</div>
+        <h3>No runs yet</h3>
+        <p>Start a parent task to create parallel worker requests.</p>
+    </div>
+}
+else
+{
+    <div class="fleet-run-list">
+        @foreach (var run in Runs)
+        {
+            <article class="fleet-run-card">
+                <header class="fleet-run-card-header">
+                    <div>
+                        <span class="fleet-run-label">RUN @run.RunId[..6].ToUpperInvariant()</span>
+                        <h3>@run.Goal</h3>
+                        <small>@run.CreatedAt.LocalDateTime.ToLongTimeString()</small>
+                    </div>
+                    <span class="fleet-status @RunStatusClass(run.Status)">@DisplayStatus(run.Status)</span>
+                </header>
+                <div class="fleet-workflow">
+                    @foreach (var worker in run.Workers)
+                    {
+                        <article class="fleet-worker-card">
+                            <header>
+                                <span class="fleet-worker-mark" aria-hidden="true">@WorkerMark(worker.Name)</span>
+                                <div>
+                                    <h4>@worker.Name</h4>
+                                    <p>@worker.Assignment</p>
+                                </div>
+                                <span class="fleet-worker-status @WorkerStatusClass(worker.Status)">@DisplayStatus(worker.Status)</span>
+                            </header>
+                            @if (worker.Response is { } response)
+                            {
+                                <details>
+                                    <summary>Worker handoff</summary>
+                                    <pre>@response</pre>
+                                </details>
+                            }
+                        </article>
+                    }
+                    <article class="fleet-parent-card">
+                        <header>
+                            <span class="fleet-parent-mark" aria-hidden="true">P</span>
+                            <div>
+                                <h4>Parent synthesis</h4>
+                                <p>Receives only worker handoffs.</p>
+                            </div>
+                            <span class="fleet-worker-status @ParentStatusClass(run.Status)">@ParentStatus(run.Status)</span>
+                        </header>
+                        @if (run.ParentResponse is { } parentResponse)
+                        {
+                            <pre>@parentResponse</pre>
+                        }
+                    </article>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<FleetRunSnapshot> Runs { get; set; } = [];
+
+    private static string DisplayStatus(FleetRunStatus status) => status switch
+    {
+        FleetRunStatus.AwaitingWorkers => "Awaiting workers",
+        FleetRunStatus.AwaitingParent => "Awaiting parent synthesis",
+        FleetRunStatus.Completed => "Completed",
+        _ => status.ToString(),
+    };
+
+    private static string DisplayStatus(FleetWorkerStatus status) => status switch
+    {
+        FleetWorkerStatus.AwaitingResponse => "Awaiting response",
+        FleetWorkerStatus.Completed => "Completed",
+        _ => status.ToString(),
+    };
+
+    private static string RunStatusClass(FleetRunStatus status) => status switch
+    {
+        FleetRunStatus.AwaitingWorkers => "status-working",
+        FleetRunStatus.AwaitingParent => "status-parent",
+        FleetRunStatus.Completed => "status-completed",
+        _ => string.Empty,
+    };
+
+    private static string WorkerStatusClass(FleetWorkerStatus status)
+        => status == FleetWorkerStatus.Completed ? "status-completed" : "status-working";
+
+    private static string ParentStatusClass(FleetRunStatus status)
+        => status == FleetRunStatus.Completed ? "status-completed" : status == FleetRunStatus.AwaitingParent ? "status-working" : "status-queued";
+
+    private static string ParentStatus(FleetRunStatus status) => status switch
+    {
+        FleetRunStatus.Completed => "Completed",
+        FleetRunStatus.AwaitingParent => "Ready",
+        _ => "Queued",
+    };
+
+    private static string WorkerMark(string name)
+        => name.StartsWith("Specification", StringComparison.Ordinal) ? "S" : "I";
+}

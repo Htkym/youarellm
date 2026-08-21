@@ -1,0 +1,73 @@
+@using Microsoft.AspNetCore.Components
+
+<details class="message message-@Role collapsed-message" open="@InitiallyOpen">
+    <summary>
+        <span class="wire-item-title">@Title</span>
+        <span class="wire-item-shape">@WireShape</span>
+        <small>@Preview</small>
+    </summary>
+    <pre>@Content</pre>
+</details>
+
+@code {
+    [Parameter] public string Role { get; set; } = "user";
+
+    [Parameter] public string Content { get; set; } = string.Empty;
+
+    [Parameter] public string ItemType { get; set; } = "message";
+
+    [Parameter] public bool InitiallyOpen { get; set; }
+
+    [Parameter] public string Protocol { get; set; } = "Chat Completions";
+
+    [Parameter] public int? WireIndex { get; set; }
+
+    [Parameter] public string? WirePath { get; set; }
+
+    private bool IsResponses => string.Equals(Protocol, "Responses", StringComparison.Ordinal);
+
+    private string Title => $"{DisplayPath} · {ItemLabel}";
+
+    private string DisplayPath => WirePath ?? ItemType switch
+    {
+        "chat_tools" or "response_tools" => "tools[]",
+        "tool_calls" => $"messages[{WireIndexText}].tool_calls[]",
+        "tool_result" => $"messages[{WireIndexText}]",
+        "function_call" or "function_call_output" => $"input[{WireIndexText}]",
+        _ => $"{(IsResponses ? "input" : "messages")}[{WireIndexText}]",
+    };
+
+    private string ItemLabel => ItemType switch
+    {
+        "chat_tools" => "function definitions",
+        "response_tools" => "function definitions",
+        "tool_calls" => "assistant tool calls",
+        "tool_result" => "tool result",
+        "function_call" => "function call",
+        "function_call_output" => "function call output",
+        _ => IsResponses ? $"{Role} message" : Role,
+    };
+
+    private string WireShape => ItemType switch
+    {
+        "chat_tools" => "tools[].function",
+        "response_tools" => "tools[].name",
+        "tool_calls" => "tool_calls[].function",
+        "tool_result" => "tool_call_id + content",
+        "function_call" => "call_id + name + arguments",
+        "function_call_output" => "call_id + output",
+        _ when IsResponses => "type: message + content parts[]",
+        _ => "role + content string",
+    };
+
+    private string WireIndexText => WireIndex?.ToString() ?? "?";
+
+    private string Preview
+    {
+        get
+        {
+            var normalized = Content.ReplaceLineEndings(" ").Trim();
+            return normalized.Length <= 100 ? normalized : normalized[..100] + "...";
+        }
+    }
+}

@@ -1,0 +1,196 @@
+.fleet-empty-state {
+    border: 1px dashed #b6c2cf;
+    border-radius: 0.7rem;
+    color: #57606a;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+}
+
+.fleet-empty-state h3 {
+    color: #24292f;
+    font-size: 1rem;
+    margin: 0.7rem 0 0.25rem;
+}
+
+.fleet-empty-state p {
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.fleet-empty-icon,
+.fleet-worker-mark,
+.fleet-parent-mark {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    font-weight: 700;
+    justify-content: center;
+}
+
+.fleet-empty-icon {
+    background: #eef5ff;
+    color: #1b6ec2;
+    font-size: 1.5rem;
+    height: 2.5rem;
+    width: 2.5rem;
+}
+
+.fleet-run-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.fleet-run-card {
+    border: 1px solid #d9d9d9;
+    border-radius: 0.7rem;
+    overflow: hidden;
+}
+
+.fleet-run-card-header {
+    align-items: start;
+    background: #fafbfc;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.fleet-run-card-header h3 {
+    color: #24292f;
+    font-size: 1rem;
+    margin: 0.2rem 0;
+}
+
+.fleet-run-card-header small,
+.fleet-run-label {
+    color: #57606a;
+    font-size: 0.75rem;
+}
+
+.fleet-run-label {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.fleet-status,
+.fleet-worker-status {
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3rem 0.55rem;
+    white-space: nowrap;
+}
+
+.status-working {
+    background: #fff8c5;
+    color: #7a5d00;
+}
+
+.status-parent {
+    background: #eae4ff;
+    color: #5a32a3;
+}
+
+.status-completed {
+    background: #dafbe1;
+    color: #1a7f37;
+}
+
+.status-queued {
+    background: #eef1f4;
+    color: #57606a;
+}
+
+.fleet-workflow {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+}
+
+.fleet-worker-card,
+.fleet-parent-card {
+    border: 1px solid #d9e4ef;
+    border-radius: 0.6rem;
+    padding: 0.85rem;
+}
+
+.fleet-parent-card {
+    background: #f7fbff;
+    border-color: #b6d7f5;
+}
+
+.fleet-worker-card header,
+.fleet-parent-card header {
+    align-items: start;
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: auto 1fr auto;
+}
+
+.fleet-worker-mark,
+.fleet-parent-mark {
+    height: 1.8rem;
+    width: 1.8rem;
+}
+
+.fleet-worker-mark {
+    background: #eef1f4;
+    color: #57606a;
+}
+
+.fleet-parent-mark {
+    background: #cfe8ff;
+    color: #0969da;
+}
+
+.fleet-worker-card h4,
+.fleet-parent-card h4 {
+    color: #24292f;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.fleet-worker-card p,
+.fleet-parent-card p {
+    color: #57606a;
+    font-size: 0.82rem;
+    margin: 0.2rem 0 0;
+}
+
+.fleet-worker-card details {
+    border-top: 1px solid #eaeef2;
+    font-size: 0.82rem;
+    margin-top: 0.8rem;
+    padding-top: 0.65rem;
+}
+
+.fleet-worker-card summary {
+    color: #0969da;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.fleet-worker-card pre,
+.fleet-parent-card pre {
+    background: #fff;
+    border-radius: 0.4rem;
+    margin: 0.65rem 0 0;
+    padding: 0.65rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@media (max-width: 640px) {
+    .fleet-run-card-header,
+    .fleet-worker-card header,
+    .fleet-parent-card header {
+        grid-template-columns: auto 1fr;
+    }
+
+    .fleet-status,
+    .fleet-worker-status {
+        grid-column: 2;
+        justify-self: start;
+    }
+}

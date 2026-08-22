@@ -167,21 +167,31 @@
 
                 <details class="tool-details">
                     <summary>Send @(request.Protocol == "Responses" ? "function call (Responses)" : "tool call (Chat Completions)")</summary>
-                    <label>Function name</label>
-                    @if (AvailableFunctionNames.Count == 0)
+                    <label for="functionName">Function name</label>
+                    @if (AvailableFunctions.Count == 0)
                     {
                         <p class="empty">This request does not advertise any callable functions.</p>
                     }
                     else
                     {
-                        <select class="form-select" @bind="functionName">
-                            @foreach (var availableFunctionName in AvailableFunctionNames)
+                        <select id="functionName" class="form-select" @bind="functionName" @bind:after="SetFunctionArgumentsFromSchema">
+                            @foreach (var availableFunction in AvailableFunctions)
                             {
-                                <option value="@availableFunctionName">@availableFunctionName</option>
+                                <option value="@availableFunction.Name">@availableFunction.Name</option>
                             }
                         </select>
-                        <label>Arguments JSON</label>
-                        <textarea class="form-control" @bind="functionArguments" rows="4"></textarea>
+                        <label for="functionArguments">Arguments JSON</label>
+                        <textarea id="functionArguments" class="form-control" @bind="functionArguments" rows="4"></textarea>
+                        @if (RequiredArguments.Count > 0)
+                        {
+                            <div class="required-arguments">
+                                <span>Required arguments</span>
+                                @foreach (var requiredArgument in RequiredArguments)
+                                {
+                                    <code @key="requiredArgument.Name">@requiredArgument.Name: @requiredArgument.Type</code>
+                                }
+                            </div>
+                        }
                         <button class="btn btn-outline-primary" @onclick="CompleteFunctionCallAsync">Send @(request.Protocol == "Responses" ? "function_call" : "tool_call")</button>
                     }
                 </details>
@@ -312,8 +322,15 @@ copilot</pre>
 
     private CompletedRequestSnapshot? SelectedHistory => history.FirstOrDefault(item => item.RequestId == selectedHistoryId);
 
-    private IReadOnlyList<string> AvailableFunctionNames
-        => ExtractFunctionNames(SelectedPending?.ToolsJson);
+    private IReadOnlyList<AvailableFunction> AvailableFunctions
+        => ExtractFunctions(SelectedPending?.ToolsJson);
+
+    private AvailableFunction? SelectedFunction
+        => AvailableFunctions.FirstOrDefault(function =>
+            string.Equals(function.Name, functionName, StringComparison.Ordinal));
+
+    private IReadOnlyList<RequiredArgument> RequiredArguments
+        => ExtractRequiredArguments(SelectedFunction?.ArgumentsSchema);
 
     protected override void OnInitialized()
     {
@@ -409,7 +426,8 @@ copilot</pre>
     private Task CompleteFunctionCallAsync()
     {
         if (selectedRequestId is not null &&
-            AvailableFunctionNames.Contains(functionName, StringComparer.Ordinal))
+            AvailableFunctions.Any(function =>
+                string.Equals(function.Name, functionName, StringComparison.Ordinal)))
         {
             var callId = "call_" + Guid.NewGuid().ToString("N");
             Store.TryCompleteTool(selectedRequestId, new FunctionCallItem(callId, functionName.Trim(), functionArguments.Trim()));
@@ -420,11 +438,16 @@ copilot</pre>
 
     private void ResetFunctionCall()
     {
-        functionName = AvailableFunctionNames.FirstOrDefault() ?? string.Empty;
-        functionArguments = "{}";
+        functionName = AvailableFunctions.FirstOrDefault()?.Name ?? string.Empty;
+        SetFunctionArgumentsFromSchema();
     }
 
-    private static IReadOnlyList<string> ExtractFunctionNames(string? toolsJson)
+    private void SetFunctionArgumentsFromSchema()
+    {
+        functionArguments = CreateArgumentsTemplate(SelectedFunction?.ArgumentsSchema);
+    }
+
+    private static IReadOnlyList<AvailableFunction> ExtractFunctions(string? toolsJson)
     {
         if (string.IsNullOrWhiteSpace(toolsJson))
         {
@@ -439,26 +462,129 @@ copilot</pre>
 
         return tools.RootElement
             .EnumerateArray()
-            .Select(GetFunctionName)
-            .OfType<string>()
-            .Distinct(StringComparer.Ordinal)
+            .Select(GetFunction)
+            .OfType<AvailableFunction>()
+            .DistinctBy(function => function.Name, StringComparer.Ordinal)
             .ToArray();
     }
 
-    private static string? GetFunctionName(JsonElement tool)
+    private static AvailableFunction? GetFunction(JsonElement tool)
     {
         if (tool.TryGetProperty("function", out var function) &&
-            function.TryGetProperty("name", out var nestedName))
+            function.TryGetProperty("name", out var nestedName) &&
+            nestedName.GetString() is { } nestedFunctionName)
         {
-            return nestedName.GetString();
+            return new AvailableFunction(
+                nestedFunctionName,
+                GetArgumentsSchema(function));
         }
 
         return tool.TryGetProperty("type", out var type) &&
                type.GetString() == "function" &&
-               tool.TryGetProperty("name", out var name)
-            ? name.GetString()
+               tool.TryGetProperty("name", out var name) &&
+               name.GetString() is { } functionName
+            ? new AvailableFunction(functionName, GetArgumentsSchema(tool))
             : null;
     }
+
+    private static string? GetArgumentsSchema(JsonElement function)
+        => function.TryGetProperty("parameters", out var parameters)
+            ? JsonSerializer.Serialize(parameters, new JsonSerializerOptions { WriteIndented = true })
+            : null;
+
+    private static string CreateArgumentsTemplate(string? argumentsSchema)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsSchema))
+        {
+            return "{}";
+        }
+
+        using var schema = JsonDocument.Parse(argumentsSchema);
+        if (!schema.RootElement.TryGetProperty("properties", out var properties) ||
+            properties.ValueKind != JsonValueKind.Object)
+        {
+            return "{}";
+        }
+
+        var template = new Dictionary<string, object?>();
+        foreach (var property in properties.EnumerateObject())
+        {
+            if (!HasFixedValue(property.Value))
+            {
+                template[property.Name] = GetTemplateValue(property.Value);
+            }
+        }
+
+        return JsonSerializer.Serialize(template, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static bool HasFixedValue(JsonElement propertySchema)
+        => propertySchema.TryGetProperty("default", out _) ||
+           propertySchema.TryGetProperty("const", out _);
+
+    private static object? GetTemplateValue(JsonElement propertySchema)
+        => GetSchemaType(propertySchema) switch
+        {
+            "boolean" => false,
+            "integer" or "number" => 0,
+            "array" => Array.Empty<object>(),
+            "object" => new Dictionary<string, object?>(),
+            _ => string.Empty
+        };
+
+    private static IReadOnlyList<RequiredArgument> ExtractRequiredArguments(string? argumentsSchema)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsSchema))
+        {
+            return [];
+        }
+
+        using var schema = JsonDocument.Parse(argumentsSchema);
+        if (!schema.RootElement.TryGetProperty("required", out var required) ||
+            required.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var properties = schema.RootElement.TryGetProperty("properties", out var propertiesElement) &&
+                         propertiesElement.ValueKind == JsonValueKind.Object
+            ? propertiesElement
+            : default;
+
+        return required.EnumerateArray()
+            .Where(argument => argument.ValueKind == JsonValueKind.String)
+            .Select(argument => argument.GetString())
+            .OfType<string>()
+            .Where(name =>
+                properties.ValueKind != JsonValueKind.Object ||
+                !properties.TryGetProperty(name, out var propertySchema) ||
+                !HasFixedValue(propertySchema))
+            .Select(name => new RequiredArgument(
+                name,
+                properties.ValueKind == JsonValueKind.Object &&
+                properties.TryGetProperty(name, out var propertySchema)
+                    ? GetSchemaType(propertySchema)
+                    : "unknown"))
+            .ToArray();
+    }
+
+    private static string GetSchemaType(JsonElement propertySchema)
+    {
+        if (propertySchema.TryGetProperty("type", out var type) &&
+            type.ValueKind == JsonValueKind.String)
+        {
+            return type.GetString() ?? "unknown";
+        }
+
+        return propertySchema.TryGetProperty("enum", out var values) &&
+               values.ValueKind == JsonValueKind.Array
+            ? "enum"
+            : "unknown";
+    }
+
+    private sealed record AvailableFunction(string Name, string? ArgumentsSchema);
+
+    private sealed record RequiredArgument(string Name, string Type);
 
     private Task CompleteAskUserAsync(FunctionCallItem toolCall)
     {

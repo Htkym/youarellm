@@ -1,9 +1,9 @@
+#pragma warning disable ASPIRETERMINAL001
+
 IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args)!;
 
 var web = builder.AddProject<Projects.YouAreLlm_Web>("youarellm-web");
 var providerBaseUrl = ReferenceExpression.Create($"{web.GetEndpoint("http")}/v1");
-
-#pragma warning disable ASPIRETERMINAL001
 
 builder.AddExecutable("copilot-completions", "copilot", "..\\..", "--model", "human")
     .WithEnvironment("COPILOT_PROVIDER_BASE_URL", providerBaseUrl)
@@ -19,7 +19,5 @@ builder.AddExecutable("copilot-responses", "copilot", "..\\..", "--model", "huma
     .WithEnvironment("COPILOT_PROVIDER_WIRE_API", "responses")
     .WaitFor(web)
     .WithTerminal();
-
-#pragma warning restore ASPIRETERMINAL001
 
 builder.Build().Run();

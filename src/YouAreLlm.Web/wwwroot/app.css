@@ -344,6 +344,26 @@ h1:focus {
     font-weight: 600;
 }
 
+.required-arguments {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    color: #8a3f00;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.required-arguments code {
+    border: 1px solid #f0c36d;
+    border-radius: 999px;
+    background: #fff5dc;
+    padding: 0.1rem 0.45rem;
+    color: #6b3200;
+    font-size: 0.85rem;
+}
+
 @media (max-width: 900px) {
     .operator-shell {
         grid-template-columns: 1fr;

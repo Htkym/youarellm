@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -23,6 +24,27 @@ public sealed class OpenAiEndpointTests
 
         Assert.NotNull(response);
         Assert.Contains(response.Data, model => model.Id == "human");
+    }
+
+    [Fact]
+    public async Task ConsoleLogRedirectTargetsTheReferringDashboardResource()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/dashboard/consolelogs/copilot-completions");
+        request.Headers.Referrer = new Uri("https://localhost:18888/resources");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Equal(
+            "https://localhost:18888/consolelogs/resource/copilot-completions",
+            response.Headers.Location?.ToString());
     }
 
     [Fact]

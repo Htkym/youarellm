@@ -100,6 +100,12 @@ For Chat Completions streaming, send `stream_options.include_usage: true` to rec
 
 Copilot CLI's built-in `/usage` reports GitHub account consumption. A local BYOK provider cannot update that account-level value, even when it returns protocol-level token usage.
 
+### Reproducible token measurement
+
+The generic token measurement tool and procedure are available in
+[`token\`](token\README.md). They exclude captured requests and other
+confidential context; local captures remain under Git-ignored `research-data\`.
+
 ### About `/model`
 
 Copilot CLI BYOK does not currently add `human` to the normal GitHub-hosted model picker. Setting `COPILOT_PROVIDER_BASE_URL` switches that process to a custom provider, and the model must be supplied with `COPILOT_MODEL` or `copilot --model human`.
@@ -175,7 +181,12 @@ This project is not affiliated with, endorsed by, or sponsored by GitHub or Micr
 
 ### Public source repositories
 
-This repository is intended to publish the application's source code, tests, and documentation only. Do not commit captured prompts, tool results, private repository context, credentials, personal data, screenshots, or generated demo materials. `research-data\`, `presentation\`, `outputs\`, and PowerPoint artifacts are excluded from Git to reduce accidental publication.
+This repository publishes the application's source code, tests, documentation,
+and the public-safe token measurement materials in `token\`. Do not commit
+captured prompts, tool results, private repository context, credentials,
+personal data, screenshots, or generated demo materials. `research-data\`,
+`presentation\`, `outputs\`, and PowerPoint artifacts are excluded from Git to
+reduce accidental publication.
 
 The application has no authentication and is designed only for local development. Do not bind it to a public network or deploy it as an internet-facing service.
 

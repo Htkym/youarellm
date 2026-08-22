@@ -100,6 +100,12 @@ Chat Completions のストリーミングで使用量が必要な場合は、`st
 
 Copilot CLI の組み込み `/usage` は GitHub アカウントの使用量を示します。ローカル BYOK provider が protocol 上の token usage を返しても、このアカウント単位の値は更新できません。
 
+### 再現可能な token 測定
+
+汎用の token 測定ツールと手順は [`token\`](token\README.md) にあります。
+取得したリクエストや機密の文脈は含めず、ローカルの capture は Git 管理から
+除外した `research-data\` に保存されます。
+
 ### `/model` について
 
 Copilot CLI BYOK は、現時点では通常の GitHub-hosted model picker に `human` を追加しません。`COPILOT_PROVIDER_BASE_URL` を設定すると、そのプロセスは custom provider に切り替わります。モデルは `COPILOT_MODEL` または `copilot --model human` で指定する必要があります。
@@ -175,7 +181,11 @@ set COPILOT_OFFLINE=true
 
 ### public repository の公開範囲
 
-このリポジトリで公開するのは、アプリケーションのソースコード、テスト、ドキュメントだけです。取得した prompt、tool の実行結果、private repository の文脈、認証情報、個人データ、スクリーンショット、生成したデモ資料は commit しないでください。誤って公開しないよう、`research-data\`、`presentation\`、`outputs\`、PowerPoint の成果物は Git 管理から除外しています。
+このリポジトリでは、アプリケーションのソースコード、テスト、ドキュメント、および
+`token\` にある公開可能な token 測定資産を公開します。取得した prompt、tool の実行結果、
+private repository の文脈、認証情報、個人データ、スクリーンショット、生成したデモ資料は
+commit しないでください。誤って公開しないよう、`research-data\`、`presentation\`、
+`outputs\`、PowerPoint の成果物は Git 管理から除外しています。
 
 このアプリケーションには認証がなく、ローカル開発環境で使う設計です。公開ネットワークへ bind したり、インターネット向けサービスとして配備したりしないでください。
 
